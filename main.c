@@ -14,7 +14,9 @@ struct sample {
 static const float srate = 8000.0;
 static const float buf_time = 0.05;
 static const float rec_duration = 3.0;
-static const float rec_threshold = 20.0;
+static const float rec_threshold = -50.0;
+static const float rec_threshold_delta = 30.0;
+static bool do_graph = false;
 
 static float rec_timer = 0.0;
 static FILE *rec_fd = NULL;
@@ -59,11 +61,10 @@ void rec_stop(void)
 void rec_write(struct sample *sample, int nsamples)
 {
 	if(rec_fd) {
-		fwrite((void *)sample, sizeof(sample), nsamples, rec_fd);
+		fwrite((void *)sample, sizeof(*sample), nsamples, rec_fd);
 	}
 }
 
-	
 
 float find_peak(struct sample *sample, int nsamples)
 {
@@ -86,13 +87,13 @@ void process(struct sample *sample, int nsamples)
 	float level_delta = level - level_prev;
 	level_prev = level;
 
-	if(level_delta > rec_threshold) {
-		debug("boom %.1f dB\n", level_delta);
+	if(level > rec_threshold && level_delta > rec_threshold_delta) {
+		debug("boom abs: %1f dB, rel %.1f dB\n", level, level_delta);
 		rec_start();
 		rec_timer = rec_duration;
 	}
 
-	
+
 	if(rec_timer > 0.0) {
 		rec_timer -= buf_time;
 		if(rec_timer <= 0) {
@@ -100,11 +101,10 @@ void process(struct sample *sample, int nsamples)
 			rec_timer = 0;
 		}
 	}
-	
+
 	rec_write(sample, nsamples);
 
-
-	if(rec_fd) {
+	if(rec_fd && do_graph) {
 		printf("%.2f %+3.0f ", rec_timer, level);
 		for(int i=-100; i<0; i++) {
 			putchar((i < level) ? '*' : ' ');
