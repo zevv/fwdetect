@@ -1,0 +1,3 @@
+#!/bin/sh
+
+paplay --channels=2 --format=float32 --rate=8000 --raw "$@"
