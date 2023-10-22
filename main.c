@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <time.h>
+#include <errno.h>
 
 #include "biquad.h"
 
@@ -16,29 +17,43 @@ struct sample {
 static const float srate = 8000.0;
 static const float buf_time = 0.05;
 static const float rec_duration = 3.0;
-static const float rec_threshold = -50.0;
-static const float rec_threshold_delta = 30.0;
+static const float rec_threshold = -70.0;
+static const float rec_threshold_delta = 40.0;
 static const char *amixer_control = "Mic";
 static const float amixer_level = 40.0;
+static const float filter_hp_freq = 30.0;
 
 static bool do_graph = true;
 struct biquad filter[2];
 
 static float rec_timer = 0.0;
 static FILE *rec_fd = NULL;
+static FILE *f_log = NULL;
 
 
 void debug(const char *msg, ...)
 {
+	if(f_log == NULL) {
+		printf("open\n");
+		f_log = fopen("fwdetect.log", "a");
+	}
+
 	char ts[64];
 	time_t now = time(NULL);
 	strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
-	fprintf(stderr, "%s ", ts);
 	va_list args;
 	va_start(args, msg);
+
+	fprintf(stderr, "%s ", ts);
 	vfprintf(stderr, msg, args);
-	va_end(args);
 	fprintf(stderr, "\e[K\n");
+
+	fprintf(f_log, "%s ", ts);
+	vfprintf(f_log, msg, args);
+	fprintf(f_log, "\n");
+	fflush(f_log);
+
+	va_end(args);
 }
 
 
@@ -118,8 +133,8 @@ void process(struct sample *sample, int nsamples)
 	rec_write(sample, nsamples);
 
 	if(do_graph) {
-		printf("%+3.0f %+3.0f [", level, level_delta);
-		for(int i=-100; i<0; i++) {
+		printf("%+4.0f %+4.0f [", level, level_delta);
+		for(int i=-120; i<0; i+=2) {
 			putchar((i < level) ? '*' : ' ');
 		}
 		printf("]\r");
@@ -130,13 +145,15 @@ void process(struct sample *sample, int nsamples)
 
 int main(int argc, char **argv)
 {
+	debug("start");
+
 	char cmd[256];
 	snprintf(cmd, sizeof(cmd), "amixer -q -c1 sset %s %.1f", amixer_control, amixer_level);
 	system(cmd);
 	
 	for(int i=0; i<2; i++) {
 		biquad_init(&filter[i], srate);
-		biquad_config(&filter[i], BIQUAD_TYPE_HP, 30, 0.737);
+		biquad_config(&filter[i], BIQUAD_TYPE_HP, filter_hp_freq, 0.737);
 	}
 
 	snprintf(cmd, sizeof(cmd), "parec --channels=2 --format=float32 --rate=%d --latency-msec=10 --process-time-msec=10", (int)srate);
